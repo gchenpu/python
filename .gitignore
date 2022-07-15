@@ -6,5 +6,10 @@
 /tutorials
 /AM_indices/jra_55
 /AM_indices/old*
+<<<<<<< HEAD
 /Anaconda
 /blocking/blocking_info
+=======
+/AM_indices/AM_indices
+/Anaconda
+>>>>>>> 28653cc4c34065a086c734223befbdd12410c26b
