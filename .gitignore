@@ -3,13 +3,11 @@
 .vscode
 *__pycache__
 *.png
-/tutorials
-/AM_indices/jra_55
-/AM_indices/old*
-<<<<<<< HEAD
+workplace*.ipynb
 /Anaconda
 /blocking/blocking_info
-=======
-/AM_indices/AM_indices
-/Anaconda
->>>>>>> 28653cc4c34065a086c734223befbdd12410c26b
+/tutorials
+/AM_indices/jra_55
+/AM_indices/cmip6
+/AM_indices/old*
+/AM_indices/data
