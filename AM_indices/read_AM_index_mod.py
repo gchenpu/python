@@ -63,8 +63,8 @@ def cal_running_mean(var, running_mean=0):
 # Read the annular modes from reanalysis data
 #=============================================================
 class Reanalysis():
-    def __init__(self, name_dir, year_start, year_end, name, source_dir=None, \
-                 annual_cycle_fft=4, running_mean=0, save_index=False):
+    def __init__(self, name_dir, year_start, year_end, plev=None, name=None, source_dir=None, \
+                annual_cycle_fft=4, running_mean=0, save_index=False):
         """
         Calculate the annular mode indices from pre-processed geopotential height averaged over the polar caps. \\
         The input data is 6 hourly, and the output is daily average. \\ 
@@ -86,11 +86,16 @@ class Reanalysis():
         self.year_start = year_start
         self.year_end = year_end
         self.num_years = year_end - year_start + 1
-        self.name = name
 
-        # http://cfconventions.org/cf-conventions/cf-conventions#calendar
-        self.calendar = '365_day'
-        self.length_of_year = 365
+        if plev:
+            self.level = plev
+        else:
+            self.level = None
+
+        if name:
+            self.name = name
+        else:
+            self.name = name_dir
                 
         self.root_dir = os.getcwd()
         if source_dir:
@@ -102,20 +107,31 @@ class Reanalysis():
         self.running_mean = running_mean
         self.save_index = save_index
 
+        # http://cfconventions.org/cf-conventions/cf-conventions#calendar
+        self.calendar = '365_day'
+        self.length_of_year = 365
+
         self.file_save = None
 
-    def init_attribute(self):
+    def init_data(self):
         """
         Initializing attributes and methods for Reanalysis
         """
 
         file = self.source_dir + '/' + self.name_dir + '/MODES_4xdaily_2007_01.nc'
         ncfile = Dataset(file, 'r')
-        self.level = ncfile.variables['pressure'][:]
+
+        level_input = ncfile.variables['pressure'][:].astype(np.float32)
         if ncfile.variables['pressure'].units == 'Pa':   # converting from Pa to hPa
-            self.level /= 100
+            level_input /= 100
+        if self.level is None:
+            self.level = level_input            # use level_input as self.level if self.level is not specified
+        if (level_input[1]-level_input[0])*(self.level[1]-self.level[0]) < 0:
+            self.level = np.flip(self.level, axis=0)    # adjust the direction of variations in self.level and level_input
+        self.level_index = np.isin(level_input, self.level)   # indices in level_input for elements in self.level
         self.num_levels = len(self.level)
-        
+        # print(f'Pressure input: {level_input}\n Pressure output: {self.level}\n Pressure levels used: {level_input[self.level_index]}\n')
+
         if self.annual_cycle_fft != 4 or self.running_mean != 0:      # default values
             tag = f"_fft{self.annual_cycle_fft}_rm{self.running_mean}"
         else:
@@ -123,13 +139,13 @@ class Reanalysis():
         self.file_save = self.root_dir + '/data/' + self.name_dir + '/AM_daily_' \
             + str(self.year_start) + '_' + str(self.year_end) + tag + '.nc'
 
-    def init_data(self):
+    def load_data(self):
         """
         read, calculate and save data in self.NAM, self.SAM
         """
 
         if self.file_save is None:
-            self.init_attribute()
+            self.init_data()
 
         if os.path.exists(self.file_save):
             print('Reading from saved data ......')
@@ -152,7 +168,7 @@ class Reanalysis():
         else:
             raise Exception("'file_save' does not exist!")
 
-    def get_data_year(self, year, var_name):
+    def get_data_1year(self, year, var_name):
         """
         read 4xdaily data for var_name and concatenate into the data in a year.
             2/29 in a leap year is discarded
@@ -167,7 +183,7 @@ class Reanalysis():
             file = self.source_dir + '/' + self.name_dir + '/' \
                 + f'MODES_4xdaily_{year}_{str(month).zfill(2)}.nc'
             ncfile = Dataset(file, 'r')
-            var_4xdaily = ncfile.variables[var_name][:]
+            var_4xdaily = ncfile.variables[var_name][:, self.level_index]
 
             var_tmp = 0.25*(var_4xdaily[0::4, :] +var_4xdaily[1::4, :]
                            +var_4xdaily[2::4, :] +var_4xdaily[3::4, :])
@@ -187,15 +203,15 @@ class Reanalysis():
         """
 
         if self.file_save is None:
-            self.init_attribute()
+            self.init_data()
 
         var = np.empty((0, self.length_of_year, self.num_levels), np.float32)    # dim(year, days_in_a_year, pressure)
         for year in range(self.year_start, self.year_end+1):
-            var = np.vstack((var, self.get_data_year(year, var_name)[None, :]))
+            var = np.vstack((var, self.get_data_1year(year, var_name)[None, :]))
 
         return var
 
-    def cal_anomaly(self, var_name):
+    def cal_AM_anomaly(self, var_name):
         """
         calculate anomalies
         return var_o(year*days_in_a_year, pressure),    # total field
@@ -205,6 +221,7 @@ class Reanalysis():
                                                             # running average with `running_mean`
         """
 
+        # print(f"{self.name}: {var_name}")
         var = self.get_data(var_name)
         var_o = var.reshape(-1, self.num_levels)    # dim(year*days_in_a_year, pressure)
 
@@ -225,9 +242,9 @@ class Reanalysis():
                SAM_index(year*days_in_a_year, pressure)
         """
 
-        NAM, NAM_mean, NAM_anomaly = self.cal_anomaly('NAM')
-        SAM, SAM_mean, SAM_anomaly = self.cal_anomaly('SAM')
-        GLOBAL, GLOBAL_mean, GLOBAL_anomaly = self.cal_anomaly('GLOBAL')
+        NAM, NAM_mean, NAM_anomaly = self.cal_AM_anomaly('NAM')
+        SAM, SAM_mean, SAM_anomaly = self.cal_AM_anomaly('SAM')
+        GLOBAL, GLOBAL_mean, GLOBAL_anomaly = self.cal_AM_anomaly('GLOBAL')
 
         NAM_index = -(NAM_anomaly-GLOBAL_anomaly)
         SAM_index = -(SAM_anomaly-GLOBAL_anomaly)
@@ -311,7 +328,7 @@ class Reanalysis():
 # Read the annular modes from cimp6 data
 #=============================================================
 class CMIP6(Reanalysis):
-    def __init__(self, name_dir, year_start, year_end, name, source_dir=None, \
+    def __init__(self, name_dir, year_start, year_end, plev=None, name=None, source_dir=None, \
                  annual_cycle_fft=4, running_mean=0, save_index=False):
         """
         Calculate the annular mode indices from pre-processed geopotential height averaged over the polar caps. \\
@@ -319,21 +336,33 @@ class CMIP6(Reanalysis):
         The input and output data are daily. \\ 
         """
 
-        super().__init__(name_dir, year_start, year_end, name, source_dir, \
+        super().__init__(name_dir, year_start, year_end, plev, name, source_dir, \
                  annual_cycle_fft, running_mean, save_index)
 
-    def init_attribute(self):
+    def init_data(self):
         """
-        overwrite `init_attribute` in class Reanalysis
+        overwrite `init_data` in class Reanalysis
         Initializing attributes and methods for CMIP6
         """
 
         file = self.source_dir + '/' + self.name_dir + '/AM_daily_1950_2014.nc'
         ncfile = Dataset(file, 'r')
-        self.level = ncfile.variables['plev'][:]
+
+        level_input = ncfile.variables['plev'][:].astype(np.float32)
         if ncfile.variables['plev'].units == 'Pa':   # converting from Pa to hPa
-            self.level /= 100
+            level_input /= 100
+        if self.level is None:
+            self.level = level_input            # use level_input as self.level if self.level is not specified
+        self.level_index = np.isin(level_input, self.level)   # indices in level_input for elements in self.level
         self.num_levels = len(self.level)
+        # print(f'Pressure input: {level_input}\n Pressure output: {self.level}\n Pressure levels used: {level_input[self.level_index]}\n')
+
+        if self.annual_cycle_fft != 4 or self.running_mean != 0:      # default values
+            tag = f"_fft{self.annual_cycle_fft}_rm{self.running_mean}"
+        else:
+            tag = ""
+        self.file_save = self.root_dir + '/data/' + self.name_dir + '/AM_daily_' \
+            + str(self.year_start) + '_' + str(self.year_end) + tag + '.nc'
 
         # 365_day or 360_day calendar
         try:
@@ -349,13 +378,6 @@ class CMIP6(Reanalysis):
                 self.calendar = '360_day'
                 self.length_of_year = 360
         
-        if self.annual_cycle_fft != 4 or self.running_mean != 0:      # default values
-            tag = f"_fft{self.annual_cycle_fft}_rm{self.running_mean}"
-        else:
-            tag = ""
-        self.file_save = self.root_dir + '/data/' + self.name_dir + '/AM_daily_' \
-            + str(self.year_start) + '_' + str(self.year_end) + tag + '.nc'
-
     def get_data(self, var_name):
         """
         overwrite `get_data` in class Reanalysis
@@ -364,17 +386,27 @@ class CMIP6(Reanalysis):
         """
 
         if self.file_save is None:
-            self.init_attribute()
+            self.init_data()
 
-        file = self.source_dir + '/' + self.name_dir + '/AM_daily_' + str(self.year_start) + '_' + str(self.year_end) + '.nc'
+        cmip6_start = 1950
+        cmip6_end = 2014
+        if self.year_start < cmip6_start or self.year_end > cmip6_end:
+            raise Exception('Year out of range!')
+
+        ys = self.year_start - cmip6_start
+        ye = self.year_end - cmip6_start
+        ylen = self.length_of_year
+
+        file = self.source_dir + '/' + self.name_dir + '/AM_daily_1950_2014.nc'
         # print(file)
+        # print(f"{self.name}, {self.level_index}")
         ncfile = Dataset(file, 'r')
         if var_name == 'GLOBAL':
-            var_o = ncfile.variables['Global'][:]        # correct the variable name for CMIP6
+            var_o = ncfile.variables['Global'][ys*ylen:(ye+1)*ylen, self.level_index]        # correct the variable name for CMIP6
         else:
-            var_o = ncfile.variables[var_name][:]        # dim(year*days_in_a_year, pressure)
+            var_o = ncfile.variables[var_name][ys*ylen:(ye+1)*ylen, self.level_index]        # dim(year*days_in_a_year, pressure)
         # print(f'Length of {var_name} in {self.name}: {var_o.shape[0]/self.length_of_year} years')
-        var = var_o.reshape(-1, self.length_of_year, self.num_levels)    # dim(year, days_in_a_year, pressure)
+        var = var_o.reshape(-1, ylen, self.num_levels)    # dim(year, days_in_a_year, pressure)
 
         return var
 
@@ -384,11 +416,11 @@ class CMIP6(Reanalysis):
 # class CMIP6(Reanalysis)
 #=============================================================
 #
-# D = Reanalysis(name_dir='jra_55', year_start=1958, year_end=2016, name='JRA55', \
+# D = Reanalysis(name_dir='jra_55', year_start=1958, year_end=2014, plev=None, name='JRA55', \
 #         annual_cycle_fft=4, running_mean=0, save_index=True)
-# D.init_data()
+# D.load_data()
 
-# D = CMIP6(name_dir='GFDL-ESM4', year_start=1950, year_end=2014, name='GFDL-ESM4', source_dir='cmip6', \
+# D = CMIP6(name_dir='GFDL-ESM4', year_start=1958, year_end=2014, plev=None, name='GFDL-ESM4', source_dir='cmip6', \
 #         annual_cycle_fft=4, running_mean=0, save_index=True)
-# D.init_data()
+# D.load_data()
 #
