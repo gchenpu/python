@@ -3,7 +3,7 @@
 .vscode
 *__pycache__
 *.png
-workplace*.ipynb
+workspace*.ipynb
 /Anaconda
 /blocking/blocking_info
 /tutorials

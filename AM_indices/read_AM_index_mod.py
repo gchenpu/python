@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 
-from warnings import filterwarnings
-filterwarnings(action='ignore', category=DeprecationWarning, message='`np.bool` is a deprecated alias')
+# from warnings import filterwarnings
+# filterwarnings(action='ignore', category=DeprecationWarning, message='`np.bool` is a deprecated alias')
 
 #=============================================================
 # Shared functions
@@ -112,6 +112,8 @@ class Reanalysis():
         self.length_of_year = 365
 
         self.file_save = None
+        self.NAM = None
+        self.SAM = None
 
     def init_data(self):
         """
@@ -156,6 +158,35 @@ class Reanalysis():
             if self.save_index:
                 self.save_AM_index()        
         # print('Completed! .......')
+
+    def slice_data(self, month_start, len_slice):
+        """
+        slice NAM and SAM each year starting from `month_start` by the length of 'len_slice'
+        """
+
+        if self.NAM is None or self.SAM is None:
+            self.load_data()
+        
+        units = 'days since 1800-01-01'
+        calendar = self.calendar
+        date_start = dt.datetime(self.year_start, 1, 1, 0)
+
+        NAM_slice = np.empty((0, len_slice, self.num_levels))
+        SAM_slice = np.empty((0, len_slice, self.num_levels))
+        for y in range(self.year_start, self.year_end+1):
+            date_end = dt.datetime(y, month_start, 1, 0)
+            num_start = date2num(date_start, units=units, calendar=calendar)
+            num_end = date2num(date_end, units=units, calendar=calendar)
+            slice_start = num_end - num_start
+            # print(y, slice_start, len_slice, self.NAM.shape[0])
+            if slice_start+len_slice <= self.NAM.shape[0]:
+                NAM_slice = np.vstack((NAM_slice, self.NAM[slice_start:slice_start+len_slice, :][None,:,:]))
+                SAM_slice = np.vstack((SAM_slice, self.SAM[slice_start:slice_start+len_slice, :][None,:,:]))
+
+        NAM_slice /= NAM_slice.reshape(-1, self.num_levels).std(axis=0)
+        SAM_slice /= SAM_slice.reshape(-1, self.num_levels).std(axis=0)
+
+        return NAM_slice, SAM_slice 
 
     def read_AM_index(self):
         """
