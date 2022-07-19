@@ -4,9 +4,9 @@
 *__pycache__
 *.png
 workspace*.ipynb
+*.pdf
 /Anaconda
 /blocking/blocking_info
-/tutorials
 /AM_indices/jra_55
 /AM_indices/cmip6
 /AM_indices/old*
