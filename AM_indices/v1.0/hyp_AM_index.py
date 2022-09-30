@@ -29,7 +29,7 @@ hyp_param = dict(lim = dict(method = 'DMD',
                 
                 train = dict(epochs = 40,   # 40, 20  # number of epochs
                              output_freq = 100,    # output per the number of batches for each epoch
-                             lr_scheduler = dict(method = 'StepLR',    # None, 'StepLR', ...
+                             lr_scheduler = dict(method = None, # 'StepLR',    # None, 'StepLR', ...
                                                  # if `method = StepLR`, 
                                                  # the learning rate decays by gamma every step_size epochs
                                                  StepLR = dict(step_size=5, gamma=0.5),
