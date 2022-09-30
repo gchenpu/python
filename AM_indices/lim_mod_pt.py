@@ -15,7 +15,8 @@ class LIM():
     def __init__(self, X, hyp_param, verbose=False):
         """
         Input: X(years, days, x), where years and days are time (denoted by t), and x is space
-        `lag` in hyper_parm: lag time used to compute Ct
+        hyper_parm: `lag_time` is the lag time used to compute Ct
+                    `method` specifies `LIM` or `DMD` to solve for the dynamic modes
 
         The propagation matrix is calculated as
         `Gt = Ct @ C0_inv`.
@@ -29,7 +30,7 @@ class LIM():
         and the reconstruction in the physical space is
         `X(t, x) = (vr @ pc.H).H = pc @ vr.H`.
 
-        method options in hyper_param:
+        method in the function `eig_m`:
         eig2: solve vl and vr separately by calling `eig` twice
         pinv: solve vr by calling `eig`, and then solve vl by calling `pinv`
         """
@@ -45,7 +46,7 @@ class LIM():
         """POP analysis described in Penland (1989)
         """
         
-        if LIM_param['r_optimal'] is None:
+        if LIM_param['r_optimal'] is None:  # truncating X to the first `r_optimal` SVDs if specified
             X_trunc = X
         else:
             X_flat = X.reshape(-1, X.shape[2])
@@ -58,7 +59,7 @@ class LIM():
 
         self.w, self.vl, self.vr = eig_m(Gt, eig_method='eig2', verbose=False)
         self.b = torch.log(self.w)/lag
-        self.B = self.vr @ torch.diag(self.b) @ self.vl.conj().T
+        self.B = (self.vr @ torch.diag(self.b) @ self.vl.conj().T).real
 
         if verbose:
             print(f"POP e-folding timescales =\n {-1/self.b.real}")
@@ -70,23 +71,32 @@ class LIM():
             # DMD for the truncation of X to rth SVD 
             Ct_hat = cov_lag(V[:, :, :r], lag_time=lag) * (len_day-lag) * len_year
             Ct_hat_s = torch.diag(s[:r]) @ Ct_hat.to(s.dtype) @ torch.diag(1.0/s[:r])
-            self.w, vl_s, vr_s = eig_m(Ct_hat_s, eig_method='eig2', verbose=False)
+            self.w, vl_s, vr_s = eig_m(Ct_hat_s, eig_method=DMD_param['eig_method'], verbose=False)
 
+            self.U = U[:, :r]
+            self.vl_s = vl_s
+            self.vr_s = vr_s
             self.vl = U[:, :r].to(vr_s.dtype) @ vl_s
             self.vr = U[:, :r].to(vr_s.dtype) @ vr_s
             self.b = torch.log(self.w)/lag
-            self.B = self.vr @ torch.diag(self.b) @ self.vl.conj().T
-            B_norm = torch.norm(self.B)
+            self.B = (self.vr @ torch.diag(self.b) @ self.vl.conj().T).real
+            B_norm = la.vector_norm(self.B, ord=ord)**ord
 
-            t = torch.linspace(0, forecast_time, 2)    # t=0 included
+            t = torch.linspace(0, forecast_time, forecast_time+1)    # t=0 included
             Xf = self.forecast(X[:, :-forecast_time, :], t)
-            X_err = torch.norm(X[:, forecast_time:, :] - Xf[:, 1, :, :])
+            X_err = la.norm(X[:, forecast_time:, :] - Xf[:, forecast_time, :, :])**2.0/(Xf.shape[0]*Xf.shape[2]*Xf.shape[3])    # only consider t=forecast_time
+            # X_err = 0
+            # for n in range(forecast_time+1):
+            #     X_err += la.norm(X[:, n:n+X.shape[1]-forecast_time, :] - Xf[:, n, :, :])**2.0
+            # X_err /= Xf.numel()
+            # print(B_norm, X_err)
 
             U_r, s_r, V_r = self.optimals(t, method='svd')
 
             return B_norm, X_err, s_r[-1]
         
         alpha = DMD_param['r_alpha']
+        ord = DMD_param['r_ord']
         r_opt = DMD_param['r_optimal']
         forecast_time = DMD_param['r_forecast']
 
@@ -99,7 +109,7 @@ class LIM():
         r_min = 2   # minimum SVDs to consider
         rcond = torch.finfo(Xh_flat.dtype).eps * max(*Xh_flat.shape)
         r_max = len(s[s>rcond*s[0]])    # rank of Xh_flat
-        s_prct = torch.empty_like(s)
+        s_prct = torch.zeros_like(s)
         for i in range(len(s)):
             s_prct[i] = torch.sum(s[:i+1]*s[:i+1])/torch.sum(s*s)*100
         # if verbose:
@@ -120,8 +130,8 @@ class LIM():
             if verbose:
                 fig=plt.figure(figsize=(12,5))
                 fig.add_subplot(1,2,1)
-                plt.plot(rr, X_err_r, label=r'norm(X-$\hat{X}$)')
-                plt.plot(rr, loss_r, label=r'norm(X-$\hat{X}$)+$\alpha$norm(B)')
+                plt.plot(rr, X_err_r, label=r'$||X-\hat{X}||^2$')
+                plt.plot(rr, loss_r, label=r'$||X-\hat{X}||^2$+$\alpha$||B||')
                 plt.plot(rr[r_opt-r_min], loss_r[r_opt-r_min], '-o')
                 plt.xlabel('truncations (r)')
                 plt.legend()
@@ -130,11 +140,11 @@ class LIM():
                 plt.plot(rr, s_r)
                 plt.plot(rr[r_opt-r_min], s_r[r_opt-r_min], '-o')
                 plt.xlabel('truncations (r)')
-                plt.ylabel(f'amplification at t={lag}')
+                plt.ylabel(f'amplification')
 
         B_norm_opt, X_err_opt, s_opt = DMD_r(U, s, V, r_opt, verbose=verbose)
         if verbose:
-            print(f'r_opt={r_opt}: % of var={s_prct[r_opt]}, B_norm={B_norm_opt}, X_err={X_err_opt}, s={s_opt}')
+            print(f'r_opt={r_opt}: % of var={s_prct[r_opt-1]:>8f}, B_norm={B_norm_opt:>8f}, X_err={X_err_opt:>8f}, s={s_opt:>8f}')
             print(f"POP e-folding timescales =\n {-1/self.b.real}")
             
     def forecast(self, X, forecast_time):
@@ -145,7 +155,7 @@ class LIM():
         """
 
         if X.ndim == 2:
-            X = X[None, :]
+            X = X[None, :]  # 1st dim of `X` is size=1
         
         len_forecast = len(forecast_time)
         len_year, len_day, len_x = X.shape
@@ -233,10 +243,10 @@ def cov_lag(X, lag_time, X2=None):
         X2 = X
 
     if X.ndim == 2:
-        X = X[:, :, None]
+        X = X[:, :, None]   # last dim of 'x' is size=1
 
     if X2.ndim == 2:
-        X2 = X2[:, :, None]
+        X2 = X2[:, :, None]   # last dim of 'x' is size=1
 
     len_year, len_day, len_x = X.shape
     len_x2 = X2.shape[2]
@@ -327,7 +337,6 @@ def eig_m(a, eig_method='eig2', inv_method='pinv', verbose=False):
         return w_sort, v_sort
 
     def eig_lr(a, eig_method=None):
-        
         # perform eigendecomposition
         if eig_method == 'eig2':
             w1, vr1 = la.eig(a)
@@ -389,6 +398,8 @@ def check_eigs(w, vl, vr, a=None):
         plt.title('a - vr @ diag(w) @vlH')
         plt.colorbar()
 
+#=============================================================
+# tests of functions
 #=============================================================
 def cal_Gt(X, hyp_param, verbose=False):
     """ Input: X(years, days, x), where years and days are time, and x is space

@@ -12,6 +12,8 @@ from netCDF4 import date2num, num2date
 import calendar
 import datetime as dt
 
+import torch
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -461,3 +463,47 @@ class CMIP6(Reanalysis):
 #         annual_cycle_fft=4, running_mean=0, save_index=True)
 # D.load_data()
 #
+
+
+#=============================================================
+# get red noise data
+#=============================================================
+def get_red_noise(gamma=[0.06], data_size=1000, seed=None):
+    if seed is not None:
+        np.random.seed(19680801+seed)
+    else:
+        np.random.seed(19680801)
+    #eps = np.random.uniform(-1, 1, data_size)
+    eps = np.random.randn(data_size)
+        
+    y = np.zeros_like(eps)
+    if len(gamma) == 1:    # AR-1
+        for i in range(1, data_size):
+            y[i] = (1-gamma[0])*y[i-1] + eps[i-1]
+    elif len(gamma) == 2:    # AR-2
+        for i in range(2, data_size):
+            y[i] = (1-gamma[0])*y[i-1] + gamma[1]*y[i-2] + eps[i-1]
+
+    t = torch.linspace(0, len(y)-1, len(y), dtype=torch.float32)
+    true_y = torch.from_numpy(y.astype(np.float32))[:,None]
+        
+    return  t, true_y
+
+
+def test_red_noise():
+    gamma=[0.06]
+    len_data = 10000
+    tt, yy = get_red_noise(gamma=gamma, data_size=len_data)
+
+    lag_time = 60
+    lags = np.linspace(0, lag_time, lag_time+1, dtype=int)
+    Ct = np.array([np.squeeze(yy.numpy()[lag:].T @ yy.numpy()[:len_data-lag]) for lag in lags])
+
+    from scipy.optimize import curve_fit
+    func = lambda x, b: np.exp(-b * x)
+    popt, pcov = curve_fit(func, lags, Ct/Ct[0])
+
+    plt.plot(lags, Ct/Ct[0])
+    plt.plot(lags, np.exp(-lags*popt[0]))
+    plt.plot(lags, np.exp(-lags*gamma[0]))
+    print(f'gamma={gamma[:]}, popt={popt[:]}')
