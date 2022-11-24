@@ -232,10 +232,11 @@ def svds_trunc(a, k=None, verbose=True):
 
     return U[:, :n_svds] @ torch.diag(s[:n_svds]) @ Vh[:n_svds, :]
 
+
 #=============================================================
 def cov_lag(X, lag_time, X2=None):
     """ Input: X(years, days, x), optional: X2(years, days, x2), where years and days are time, and x and x2 are space
-        First calculate the covariance in the dimension of `days`, and then take the average along the dimension of `years`
+        First calculate the covariance in the dimension of `days` using `matmul`, and then take the average along the dimension of `years`
         return Ct(x, x2)
     """
 
@@ -244,18 +245,16 @@ def cov_lag(X, lag_time, X2=None):
 
     if X.ndim == 2:
         X = X[:, :, None]   # last dim of 'x' is size=1
-
+    
     if X2.ndim == 2:
         X2 = X2[:, :, None]   # last dim of 'x' is size=1
 
-    len_year, len_day, len_x = X.shape
-    len_x2 = X2.shape[2]
-
-    Ct = torch.empty((len_year, len_x, len_x2))
-    for n in range(len_year):
-        Ct[n, :, :] = torch.squeeze(X[n, lag_time:, :], 0).T @ torch.squeeze(X2[n, 0:len_day-lag_time, :], 0) / (len_day-lag_time)
-
+    len_day = X.shape[1]
+    X1 = torch.permute(X, (0, 2, 1))     # prepare for torch.matmul or @; torch.permute is equivalent np.transpose
+    Ct = X1[:, :, lag_time:] @ X2[:, 0:len_day-lag_time, :] / (len_day-lag_time)
+    
     return torch.squeeze(Ct.mean(axis=0))
+
 
 #=============================================================
 def pinv(C0, Ct=None, inv_method='pinv'):
