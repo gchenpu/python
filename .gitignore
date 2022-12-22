@@ -7,6 +7,7 @@ workspace*.ipynb
 /Anaconda
 /blocking/blocking_info
 /AM_indices/jra_55
+/AM_indices/ERA5
 /AM_indices/cmip6
 /AM_indices/old*
 /AM_indices/data

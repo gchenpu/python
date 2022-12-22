@@ -11,6 +11,7 @@ from netCDF4 import date2num, num2date
 import calendar
 import datetime as dt
 
+
 #=============================================================
 # My DataSet class
 #=============================================================
@@ -162,6 +163,9 @@ class CMIP6(MyDataSet):
             elif calendar == "360_day":
                 self.calendar = '360_day'
                 self.length_of_year = 360
+            else:
+                self.calendar = '365_day'
+                self.length_of_year = 365
         else:
             raise Exception('Calendar is not specified!')
         
@@ -276,6 +280,7 @@ class MyIndex():
     def __init__(self, data, index_name, annual_cycle_fft=2, running_mean=0, save_index=False):
         """
         Calulate indices from `data (type: MyDataSet)` and write data with the name of `index_name`
+        Use the method `get_data` from the class `MyDataSet`
         Key options:
         annual_cycle_fft: option to remove the harmonics above `annual_cycle_fft` from the annual cycle
         running_mean: option to conduct running average for the anomaly with `running_mean`
