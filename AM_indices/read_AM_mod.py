@@ -412,27 +412,29 @@ class MyIndex():
 
         return var_o, var_name_o, var_anomaly_o
 
-    def cal_slice(self, month_start, len_slice):
+    def cal_slice(self, month_start, len_slice, slice_offset=0):
         """
         slice `self.index` each year starting from `month_start` by the length of 'len_slice'
+        offset: add data before `month_start` with the length of `offset`; not included for calculating std
         return  my_slice(year, len_slice, x)
         """
         
+        self.slice_offset = slice_offset
         units = 'days since 1800-01-01'
         calendar = self.data.calendar
         date_start = dt.datetime(self.data.year_start, 1, 1, 0)
         num_start = date2num(date_start, units=units, calendar=calendar)
 
-        my_slice = np.empty((0, len_slice, self.index.shape[1]))
+        my_slice = np.empty((0, len_slice+slice_offset, self.index.shape[1]))
         for y in range(self.data.year_start, self.data.year_end+1):
             date_end = dt.datetime(y, month_start, 1, 0)
             num_end = date2num(date_end, units=units, calendar=calendar)
             slice_start = num_end - num_start
             # print(y, slice_start, len_slice, self.index.shape[0])
             if slice_start+len_slice <= self.index.shape[0]:
-                my_slice = np.vstack((my_slice, self.index[slice_start:slice_start+len_slice, :][None,:,:]))
+                my_slice = np.vstack((my_slice, self.index[slice_start-slice_offset:slice_start+len_slice, :][None,:,:]))
 
-        my_slice /= my_slice.reshape(-1, self.index.shape[1]).std(axis=0)
+        my_slice /= my_slice[:,slice_offset:,:].reshape(-1, self.index.shape[1]).std(axis=0)
 
         return my_slice 
 

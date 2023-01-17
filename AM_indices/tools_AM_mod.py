@@ -60,7 +60,7 @@ def cov_lag(X, lag_time, X2=None):
 
 
 #=============================================================
-def find_event(y, p, yf=None, threshold=-3, separation=30, lag_time=60):
+def find_event(y, p, y2=None, yf=None, threshold=-3, separation=30, lag_time=60):
     """
     Input data: y(years, days, x), where years and days are time, and x is space
     p(x): pressure levels
@@ -84,7 +84,7 @@ def find_event(y, p, yf=None, threshold=-3, separation=30, lag_time=60):
         if (idx[0] > idx_event[-1,0]) or (idx[1] - idx_event[-1,1] > separation):   # next year or sufficiently seperated 
             idx_event = np.vstack((idx_event, idx))
 
-    if yf is None:
+    if yf is None and y2 is None:
         y_event = np.zeros((0, lag_time+1, y.shape[2]))
         for idx in idx_event:
             yy, dd = idx[:]
@@ -93,6 +93,15 @@ def find_event(y, p, yf=None, threshold=-3, separation=30, lag_time=60):
 
         print(f'# of events: {len(y_event)}({len(y_event)/len(y):.2f})')
         return y_event.mean(axis=0), len(y_event)
+    elif yf is None:
+        y2_event = np.zeros((0, lag_time*2+1, y.shape[2]))
+        for idx in idx_event:
+            yy, dd = idx[:]
+            if dd+lag_time+1 <= y.shape[1]:
+                y2_event = np.vstack((y2_event, y2[yy, dd:dd+lag_time*2+1, :][None,:]))
+
+        print(f'# of events: {len(y2_event)}({len(y2_event)/len(y2):.2f})')
+        return y2_event.mean(axis=0), len(y2_event)
     else:
         yf_event = np.zeros((0, lag_time+1, yf.shape[3]))
         for idx in idx_event:
@@ -102,3 +111,4 @@ def find_event(y, p, yf=None, threshold=-3, separation=30, lag_time=60):
 
         # print(f'# of events: {len(yf_event)}')
         return yf_event.mean(axis=0), len(yf_event)
+
