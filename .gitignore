@@ -13,10 +13,11 @@ tutorials
 vae*
 *.doc
 *.docx
+*.ncl
 AM_indices/old*
 AM_indices/vv*
 AM_indices/tests*
-AM_indices/clean_version/cmip6
+AM_indices/clean_version
 AM_indices/cmip6*
 AM_indices/jra_55
 AM_indices/data*
